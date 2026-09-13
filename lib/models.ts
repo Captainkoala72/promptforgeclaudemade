@@ -92,8 +92,8 @@ export const PROVIDERS: ProviderConfig[] = [
     path: "/chat/completions",
     models: [
       {
-        id: "deepseek-4.1-flash",
-        label: "DeepSeek 4.1 Flash",
+        id: "deepseek-flash",
+        label: "DeepSeek Flash",
         efforts: ["low", "high", "max"],
         defaultEffort: "high",
       },
