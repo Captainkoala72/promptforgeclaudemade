@@ -6,19 +6,21 @@ const config: Config = {
     extend: {
       colors: {
         ink: {
-          900: "#101219",
-          800: "#161926",
-          700: "#1D2130",
-          600: "#262B3D",
-          500: "#333A50",
+          900: "#111215",
+          850: "#17181C",
+          800: "#1E2025",
+          700: "#26282D",
+          600: "#303238",
+          500: "#45474D",
         },
         haze: {
-          100: "#E7E9F2",
-          300: "#AEB4C8",
-          500: "#7E869E",
+          100: "#F3F0EB",
+          300: "#D5D1CB",
+          500: "#A8ABB2",
         },
-        beam: "#7C9CFF",
-        ember: "#F2B66D",
+        beam: "#FF6A1A",
+        ember: "#FF8A3D",
+        glow: "#C43B16",
       },
       fontFamily: {
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],

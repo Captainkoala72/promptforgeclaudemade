@@ -5,10 +5,18 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Prompt Forge",
   description: "Rebuild rough ideas into engineered prompts, or clean up prompts you've already written.",
+  icons: {
+    icon: [
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon.ico", sizes: "any" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#101219",
+  themeColor: "#111215",
   width: "device-width",
   initialScale: 1,
 };

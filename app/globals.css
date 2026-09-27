@@ -5,29 +5,41 @@
 :root {
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --page: #111215;
+  --section: #17181c;
+  --surface: #1e2025;
+  --border: #303238;
+  --text: #f3f0eb;
+  --muted: #a8abb2;
+  --accent: #ff6a1a;
+  --accent-hover: #ff8a3d;
   color-scheme: dark;
 }
 
 html,
 body {
-  height: 100%;
+  min-height: 100%;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background-color: theme("colors.ink.900");
-  color: theme("colors.haze.100");
+  background-color: var(--page);
+  color: var(--text);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
 /* Keyboard focus stays visible everywhere. */
 :focus-visible {
-  outline: 2px solid theme("colors.beam");
-  outline-offset: 2px;
+  outline: 2px solid var(--accent-hover);
+  outline-offset: 3px;
 }
 
 ::selection {
-  background: rgba(124, 156, 255, 0.3);
+  background: rgba(255, 106, 26, 0.32);
 }
 
 /* Scrollbars that don't fight the dark surface. */
@@ -53,6 +65,9 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
   *,
   *::before,
   *::after {
