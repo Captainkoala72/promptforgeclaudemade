@@ -12,8 +12,9 @@ import {
   getProvider,
 } from "@/lib/models";
 import { DEFAULT_TEMPLATE, TEMPLATES, getTemplate } from "@/lib/templates";
+import { DEFAULT_OPTIMIZER_STYLE } from "@/lib/optimizerStyle";
 import { clearHistory, loadHistory, newId, saveHistory } from "@/lib/history";
-import type { Mode, Run, StreamEvent } from "@/lib/types";
+import type { Mode, OptimizerStyle, Run, StreamEvent } from "@/lib/types";
 
 import HistorySidebar from "./HistorySidebar";
 import OutputPanel from "./OutputPanel";
@@ -32,15 +33,31 @@ const MODES: { id: Mode; label: string; blurb: string }[] = [
   },
 ];
 
+const OPTIMIZER_STYLES: { id: OptimizerStyle; label: string; description: string }[] = [
+  {
+    id: "full-agent",
+    label: "Full Agent",
+    description: "A detailed prompt with role, constraints, output format, and edge cases.",
+  },
+  {
+    id: "humanized",
+    label: "Humanized",
+    description: "The same depth in natural language that is easier to read and edit.",
+  },
+];
+
 export default function Forge() {
   const [input, setInput] = useState("");
   const [mode, setMode] = useState<Mode>("optimizer");
+  const [optimizerStyle, setOptimizerStyle] = useState<OptimizerStyle>(DEFAULT_OPTIMIZER_STYLE);
   const [templateId, setTemplateId] = useState(DEFAULT_TEMPLATE);
   const [providerId, setProviderId] = useState<string>(DEFAULT_PROVIDER);
   const [modelId, setModelId] = useState<string>(DEFAULT_MODEL);
   const [effort, setEffort] = useState<string>(DEFAULT_EFFORT);
 
   const [output, setOutput] = useState("");
+  const [resultMode, setResultMode] = useState<Mode>("optimizer");
+  const [resultStyle, setResultStyle] = useState<OptimizerStyle>(DEFAULT_OPTIMIZER_STYLE);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<{ message: string; provider?: string } | null>(null);
 
@@ -102,6 +119,8 @@ export default function Forge() {
     setStreaming(true);
     setError(null);
     setOutput("");
+    setResultMode(mode);
+    setResultStyle(optimizerStyle);
     setActiveRunId(null);
 
     let collected = "";
@@ -114,6 +133,7 @@ export default function Forge() {
         body: JSON.stringify({
           input: text,
           mode,
+          optimizerStyle: mode === "optimizer" ? optimizerStyle : DEFAULT_OPTIMIZER_STYLE,
           template: templateId,
           provider: providerId,
           model: modelId,
@@ -183,6 +203,7 @@ export default function Forge() {
         id: newId(),
         createdAt: Date.now(),
         mode,
+        optimizerStyle: mode === "optimizer" ? optimizerStyle : DEFAULT_OPTIMIZER_STYLE,
         templateId,
         provider: providerId,
         model: modelId,
@@ -191,7 +212,7 @@ export default function Forge() {
         output: collected,
       });
     }
-  }, [input, streaming, mode, templateId, providerId, modelId, effort, commitRun]);
+  }, [input, streaming, mode, optimizerStyle, templateId, providerId, modelId, effort, commitRun]);
 
   function stop() {
     abortRef.current?.abort();
@@ -209,7 +230,10 @@ export default function Forge() {
     stop();
     setInput(run.input);
     setOutput(run.output);
+    setResultMode(run.mode);
+    setResultStyle(run.optimizerStyle);
     setMode(run.mode);
+    setOptimizerStyle(run.optimizerStyle);
     setTemplateId(run.templateId);
     if (getProvider(run.provider)) {
       setProviderId(run.provider);
@@ -323,6 +347,29 @@ export default function Forge() {
                   </div>
                   <p className="mt-2 text-xs leading-relaxed text-haze-500">{activeMode.blurb}</p>
                 </div>
+                {mode === "optimizer" ? (
+                  <div className="border-t border-ink-600 pt-6">
+                    <p id="optimizer-style-label" className="mb-2 text-sm font-medium text-haze-100">Output style</p>
+                    <div role="group" aria-labelledby="optimizer-style-label" className="grid gap-2 sm:grid-cols-2">
+                      {OPTIMIZER_STYLES.map((style) => {
+                        const selected = style.id === optimizerStyle;
+                        return (
+                          <button
+                            key={style.id}
+                            type="button"
+                            aria-pressed={selected}
+                            onClick={() => setOptimizerStyle(style.id)}
+                            className={"min-h-[88px] rounded-[11px] border px-4 py-3 text-left transition-colors duration-200 " +
+                              (selected ? "border-beam bg-ink-700" : "border-ink-600 bg-ink-900 hover:border-ink-500")}
+                          >
+                            <span className="block text-sm font-semibold text-haze-100">{style.label}</span>
+                            <span className="mt-1 block text-xs leading-relaxed text-haze-500">{style.description}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
                 <div ref={controlsRef} className="grid gap-5 border-t border-ink-600 pt-6 sm:grid-cols-2">
                   <div className="sm:col-span-2">
                     <Field label="Template" htmlFor="template" hint={template?.description}>
@@ -357,7 +404,15 @@ export default function Forge() {
                 </div>
               </div>
               <div className="min-w-0 lg:sticky lg:top-[92px]">
-                <OutputPanel output={output} streaming={streaming} error={error} mode={mode} onRerun={handleRerun} canRerun={!streaming && input.trim().length > 0} />
+                <OutputPanel
+                  output={output}
+                  streaming={streaming}
+                  error={error}
+                  mode={output || streaming || error ? resultMode : mode}
+                  optimizerStyle={output || streaming || error ? resultStyle : optimizerStyle}
+                  onRerun={handleRerun}
+                  canRerun={!streaming && input.trim().length > 0}
+                />
               </div>
             </div>
           </div>

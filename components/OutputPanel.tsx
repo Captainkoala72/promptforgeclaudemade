@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { countWords } from "@/lib/history";
+import type { OptimizerStyle } from "@/lib/types";
 import { Button } from "./ui";
 
 interface OutputPanelProps {
@@ -10,6 +11,7 @@ interface OutputPanelProps {
   streaming: boolean;
   error: { message: string; provider?: string } | null;
   mode: "optimizer" | "polisher";
+  optimizerStyle: OptimizerStyle;
   onRerun: () => void;
   canRerun: boolean;
 }
@@ -19,6 +21,7 @@ export default function OutputPanel({
   streaming,
   error,
   mode,
+  optimizerStyle,
   onRerun,
   canRerun,
 }: OutputPanelProps) {
@@ -59,7 +62,9 @@ export default function OutputPanel({
     <section aria-label="Prompt result" className="flex min-h-[360px] min-w-0 flex-col overflow-hidden rounded-2xl border border-ink-600 bg-ink-800 lg:min-h-[640px]">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-3 border-b border-ink-600 px-5 py-4 sm:px-6">
         <h3 className="text-lg font-semibold text-haze-100">
-          {mode === "optimizer" ? "Engineered prompt" : "Polished prompt"}
+          {mode === "optimizer"
+            ? optimizerStyle === "humanized" ? "Humanized prompt" : "Full Agent prompt"
+            : "Polished prompt"}
         </h3>
 
         {streaming ? (
@@ -116,7 +121,9 @@ export default function OutputPanel({
               {error
                 ? "Review the error above, then try again."
                 : mode === "optimizer"
-                ? "Describe what you want an AI to do - a sentence is enough. You'll get back a full prompt with role, constraints, output format, and edge cases filled in."
+                ? optimizerStyle === "humanized"
+                  ? "Describe what you want an AI to do. You'll get a complete prompt in natural wording that is easy to edit."
+                  : "Describe what you want an AI to do - a sentence is enough. You'll get back a full prompt with role, constraints, output format, and edge cases filled in."
                 : "Paste a prompt you've already written. You'll get the same prompt back, with the ambiguity and contradictions taken out."}
             </p>
           </div>

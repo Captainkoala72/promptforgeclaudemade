@@ -3,7 +3,9 @@
 A single-user prompt workbench. Two modes:
 
 - **Optimizer** — takes a rough idea and rebuilds it into a full engineered prompt (role, context, constraints, output format, edge cases). Output is usually much longer than the input.
-- **Polisher** — takes a prompt you already wrote and cleans it up without changing what it asks for. Output stays close to the original length and voice.
+- **Polisher** - takes a prompt you already wrote and cleans it up without changing what it asks for. Output stays close to the original length and voice.
+
+Optimizer has two output styles: **Full Agent** creates a structured, detailed prompt; **Humanized** keeps the same requirements in more natural wording that is easier to edit. The selected style is saved with each run. Templates include image and AI video generation alongside the other work types.
 
 Next.js (App Router) + TypeScript + Tailwind. No database, no auth, no accounts. History lives in your browser's localStorage.
 
@@ -105,6 +107,6 @@ Both live in `lib/prompts.ts` as `OPTIMIZER_SYSTEM` and `POLISHER_SYSTEM`. Nothi
 
 ## Notes
 
-- History keeps the last 20 runs in localStorage under `prompt-forge:history:v1`. Clicking an entry restores the input, the output, and the settings that produced it.
+- History keeps the last 20 runs in localStorage under `prompt-forge:history:v1`. Clicking an entry restores the input, the output, and the settings that produced it. Older runs without an output style restore as Full Agent.
 - Provider errors are surfaced verbatim rather than replaced with a generic message — including a missing API key, an unsupported effort level, or a 429.
 - ⌘/Ctrl + Enter runs from the textarea.

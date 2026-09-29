@@ -1,4 +1,5 @@
 import type { Run } from "./types";
+import { DEFAULT_OPTIMIZER_STYLE } from "./optimizerStyle";
 
 const STORAGE_KEY = "prompt-forge:history:v1";
 export const HISTORY_LIMIT = 20;
@@ -11,7 +12,13 @@ export function loadHistory(): Run[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isRun).slice(0, HISTORY_LIMIT);
+    return parsed
+      .filter(isRun)
+      .slice(0, HISTORY_LIMIT)
+      .map((run) => ({
+        ...run,
+        optimizerStyle: run.optimizerStyle === "humanized" ? "humanized" : DEFAULT_OPTIMIZER_STYLE,
+      }));
   } catch {
     return [];
   }

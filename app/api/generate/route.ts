@@ -10,6 +10,7 @@ export const maxDuration = 60;
 interface GenerateBody {
   input?: unknown;
   mode?: unknown;
+  optimizerStyle?: unknown;
   template?: unknown;
   provider?: unknown;
   model?: unknown;
@@ -32,6 +33,7 @@ export async function POST(req: NextRequest) {
 
   const input = typeof body.input === "string" ? body.input.trim() : "";
   const mode = body.mode === "polisher" ? "polisher" : "optimizer";
+  const optimizerStyle = body.optimizerStyle === "humanized" ? "humanized" : "full-agent";
   const template = typeof body.template === "string" ? body.template : "general";
   const provider = typeof body.provider === "string" ? body.provider : "";
   const model = typeof body.model === "string" ? body.model : "";
@@ -49,7 +51,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const system = buildSystemPrompt(mode as Mode, template);
+  const system = buildSystemPrompt(mode as Mode, template, optimizerStyle);
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({

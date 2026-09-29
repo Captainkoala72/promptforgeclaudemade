@@ -84,7 +84,11 @@ export default function HistorySidebar({
                       (isActive ? "border-beam bg-ink-700" : "border-transparent hover:border-ink-600 hover:bg-ink-700")}>
                     <div className="flex items-center gap-2">
                       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-beam" aria-hidden="true" />
-                      <span className="text-xs font-medium text-haze-300">{run.mode === "optimizer" ? "Optimizer" : "Polisher"}</span>
+                      <span className="truncate text-xs font-medium text-haze-300">
+                        {run.mode === "optimizer"
+                          ? run.optimizerStyle === "humanized" ? "Optimizer · Humanized" : "Optimizer · Full Agent"
+                          : "Polisher"}
+                      </span>
                       <span className="ml-auto shrink-0 text-xs text-haze-500">{relativeTime(run.createdAt)}</span>
                     </div>
                     <p className="mt-1.5 line-clamp-2 text-sm leading-snug text-haze-100">{run.input.slice(0, 160) || "Untitled run"}</p>

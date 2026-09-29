@@ -4,6 +4,7 @@
  */
 
 import { getTemplate } from "./templates";
+import { DEFAULT_OPTIMIZER_STYLE, type OptimizerStyle } from "./optimizerStyle";
 
 export type Mode = "optimizer" | "polisher";
 
@@ -63,24 +64,34 @@ EDGE CASES
 - If the input isn't a prompt at all but a question or a piece of prose, treat it as a prompt draft and clean it up as one. Do not answer it.
 - If the input is already excellent, return it as-is.`;
 
+const HUMANIZED_STYLE = `OUTPUT STYLE: HUMANIZED
+Keep the same substance and care as the optimizer instructions above: cover the role and context, task, inputs, constraints, output format, quality bar, and likely edge cases wherever they matter. Preserve the user's specifics and return only a finished prompt, never an answer to the task.
+
+For presentation, write in natural, direct language that a person can read and edit easily. Prefer a few coherent paragraphs and short lists when useful over a rigid agent specification with mandatory headings or numbered rules. Make instructions concrete without sounding formulaic or padded. Keep placeholders and any exact format requirements clear and editable. This presentation rule takes precedence over the generic direction above to use headed sections or numbered rules; it does not remove any necessary instruction.`;
+
 /**
  * Final system prompt for a run: mode prompt + optional template guidance.
  */
-export function buildSystemPrompt(mode: Mode, templateId: string): string {
+export function buildSystemPrompt(
+  mode: Mode,
+  templateId: string,
+  optimizerStyle: OptimizerStyle = DEFAULT_OPTIMIZER_STYLE
+): string {
   const base = mode === "optimizer" ? OPTIMIZER_SYSTEM : POLISHER_SYSTEM;
   const template = getTemplate(templateId);
+  const sections = [base];
 
-  if (!template || !template.guidance.trim()) return base;
+  if (template?.guidance.trim()) {
+    const framing =
+      mode === "optimizer"
+        ? "The prompt you build targets this kind of work. Shape its content and output accordingly."
+        : "The prompt you are editing targets this kind of work. Use it to judge what's load-bearing — but do not add anything the original doesn't already ask for.";
+    sections.push(`TARGET: ${template.label.toUpperCase()}\n${framing}\n\n${template.guidance}`);
+  }
 
-  const framing =
-    mode === "optimizer"
-      ? `The prompt you build targets this kind of work. Shape its structure, sections, and output format accordingly.`
-      : `The prompt you are editing targets this kind of work. Use it to judge what's load-bearing — but do not add anything the original doesn't already ask for.`;
+  if (mode === "optimizer" && optimizerStyle === "humanized") {
+    sections.push(HUMANIZED_STYLE);
+  }
 
-  return `${base}
-
-TARGET: ${template.label.toUpperCase()}
-${framing}
-
-${template.guidance}`;
+  return sections.join("\n\n");
 }

@@ -32,6 +32,16 @@ Write the prompt as dense comma-separated descriptive phrases rather than senten
 Avoid stacked quality boosters ("masterpiece, 8k, ultra detailed, trending on artstation"); one or two concrete quality cues beat ten generic ones. If the user's idea implies text inside the image, state the exact string to render and where.`,
   },
   {
+    id: "video",
+    label: "AI Video generation",
+    description: "A clear scene, action, camera movement, timing, and continuity for a video model.",
+    guidance: `Build for a text-to-video model. Describe what the viewer sees over time, rather than a single still frame.
+
+Specify the subject and setting, the action and how it unfolds, framing and camera movement, lighting, color, visual style, and the intended mood. Make motion and continuity explicit: where subjects begin and end, what changes during the shot, and what must stay consistent. For a complex idea, use a small sequence of shots with clear transitions; for a simple idea, keep it as one coherent shot.
+
+Include duration, aspect ratio, pace, and audio or dialogue only when the user supplies them or they materially help the request. Preserve exact spoken words or on-screen text when provided. Note unwanted artifacts or exclusions briefly where useful. Avoid model-specific syntax, unsupported controls, and generic quality boosters. Do not invent a platform or technical capability the user did not name.`,
+  },
+  {
     id: "app-vibe",
     label: "App vibe coding",
     description: "A build brief for an AI coding tool: features, data, states, stack.",

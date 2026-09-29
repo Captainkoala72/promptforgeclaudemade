@@ -1,12 +1,14 @@
 import type { Mode } from "./prompts";
+import type { OptimizerStyle } from "./optimizerStyle";
 
-export type { Mode };
+export type { Mode, OptimizerStyle };
 
 /** One completed generation, as stored in localStorage. */
 export interface Run {
   id: string;
   createdAt: number;
   mode: Mode;
+  optimizerStyle: OptimizerStyle;
   templateId: string;
   provider: string;
   model: string;
