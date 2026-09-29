@@ -78,6 +78,7 @@ export default function Forge() {
   const controlsRef = useRef<HTMLDivElement>(null);
   const historyButtonRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const addingImagesRef = useRef(false);
   const restoreTokenRef = useRef(0);
 
   const provider = getProvider(providerId);
@@ -94,13 +95,14 @@ export default function Forge() {
     if (historyLoaded) void pruneRunImages(history.map((run) => run.id)).catch(() => {});
   }, [history, historyLoaded]);
 
-  async function addImages(files: FileList | null) {
-    if (!files?.length) return;
+  async function addImages(files: File[]) {
+    if (!files.length || addingImagesRef.current || restoringImages) return;
+    addingImagesRef.current = true;
     setAddingImages(true);
     setImageError("");
     try {
       const next = [...images];
-      for (const file of Array.from(files)) {
+      for (const file of files) {
         if (next.length >= MAX_IMAGES) throw new Error(`Attach no more than ${MAX_IMAGES} images.`);
         const image = await prepareImage(file);
         if (next.reduce((sum, item) => sum + item.bytes, 0) + image.bytes > MAX_TOTAL_IMAGE_BYTES) {
@@ -115,9 +117,35 @@ export default function Forge() {
     } catch (err) {
       setImageError(err instanceof Error ? err.message : "Could not attach the image.");
     } finally {
+      addingImagesRef.current = false;
       setAddingImages(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  }
+
+  function handleImagePaste(event: React.ClipboardEvent<HTMLDivElement>) {
+    const itemFiles = Array.from(event.clipboardData.items)
+      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    const files = itemFiles.length
+      ? itemFiles
+      : Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
+    if (!files.length) return; // Leave ordinary text paste alone.
+
+    event.preventDefault();
+    if (addingImagesRef.current || restoringImages) {
+      setImageError("Wait for the current images to finish preparing, then paste again.");
+      return;
+    }
+    const namedFiles = files.map((file, index) => {
+      const extension = file.type.split("/")[1] === "jpeg" ? "jpg" : file.type.split("/")[1];
+      const name = file.name && file.name !== "image.png"
+        ? file.name
+        : `Pasted image ${images.length + index + 1}.${extension}`;
+      return new File([file], name, { type: file.type });
+    });
+    void addImages(namedFiles);
   }
 
   /** Model changed → snap effort to something this model actually supports. */
@@ -382,7 +410,7 @@ export default function Forge() {
               <p className="max-w-[44ch] text-sm leading-relaxed text-haze-500">Build from a sketch or refine what you have.</p>
             </div>
             <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start lg:gap-7">
-              <div className="flex min-w-0 flex-col gap-6 rounded-2xl border border-ink-600 bg-ink-800 p-5 sm:p-6">
+              <div onPaste={handleImagePaste} className="flex min-w-0 flex-col gap-6 rounded-2xl border border-ink-600 bg-ink-800 p-5 sm:p-6">
                 <div className="flex items-baseline justify-between gap-3">
                   <h3 className="text-lg font-semibold text-haze-100">Your input</h3>
                   <span className="font-mono text-xs text-haze-500">01 / 02</span>
@@ -418,11 +446,14 @@ export default function Forge() {
                       multiple
                       hidden
                       tabIndex={-1}
-                      onChange={(event) => void addImages(event.target.files)}
+                      onChange={(event) => void addImages(Array.from(event.target.files ?? []))}
                     />
                     <Button type="button" onClick={() => fileInputRef.current?.click()} disabled={addingImages || restoringImages || images.length >= MAX_IMAGES}>
                       {addingImages ? "Preparing..." : "Attach images"}
                     </Button>
+                  </div>
+                  <div role="group" tabIndex={0} aria-label="Paste image attachments" className="mt-4 rounded-[11px] border border-dashed border-ink-500 bg-ink-900 px-4 py-3 text-xs leading-relaxed text-haze-300 focus:border-ember focus:outline-none">
+                    Click here and press Ctrl/⌘ + V to paste an image. You can also paste while writing your prompt.
                   </div>
                   {images.length ? (
                     <ul className="mt-4 grid gap-3 sm:grid-cols-3" aria-label="Attached images">

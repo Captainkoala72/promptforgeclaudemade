@@ -7,7 +7,7 @@ A single-user prompt workbench. Two modes:
 
 Optimizer has two output styles: **Full Agent** creates a structured, detailed prompt; **Humanized** keeps the same requirements in more natural wording that is easier to edit. The selected style is saved with each run. Templates include image and AI video generation alongside the other work types.
 
-Attach up to three PNG, JPEG, or WebP reference images to either mode. Large images are resized in the browser; the combined request is limited to 2.5 MB of image data. The selected model receives the prompt text and images together. Images for completed runs are saved locally in IndexedDB so they can be restored from history; if browser storage is unavailable, reattach them before rerunning. Images are sent to the selected AI provider when you run a prompt.
+Attach or paste up to three PNG, JPEG, or WebP reference images to either mode. Copy an image, focus the paste area or prompt editor, and press Ctrl/⌘ + V. Large images are resized in the browser; the combined request is limited to 2.5 MB of image data. The selected model receives the prompt text and images together. Images for completed runs are saved locally in IndexedDB so they can be restored from history; if browser storage is unavailable, reattach them before rerunning. Images are sent to the selected AI provider when you run a prompt.
 
 Next.js (App Router) + TypeScript + Tailwind. No server database, auth, or accounts. History stays in your browser.
 
