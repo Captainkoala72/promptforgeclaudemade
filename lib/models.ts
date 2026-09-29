@@ -9,7 +9,17 @@
  * differs, give it its own `buildBody` and/or `extractDelta`.
  */
 
+import type { PromptImage } from "./images";
+
 export type ProviderId = "zai" | "deepseek" | "meta" | "moonshot";
+
+export interface ModelRequest {
+  model: string;
+  effort: string;
+  system: string;
+  user: string;
+  images: PromptImage[];
+}
 
 export interface ModelConfig {
   /** Wire-format model id sent to the provider. */
@@ -41,7 +51,7 @@ export interface ProviderConfig {
    * the default OpenAI-compatible body; return the body to actually send.
    */
   buildBody?: (
-    args: { model: string; effort: string; system: string; user: string },
+    args: ModelRequest,
     defaultBody: Record<string, unknown>
   ) => Record<string, unknown>;
   /** Optional override for pulling text out of a streamed SSE chunk. */
@@ -49,19 +59,23 @@ export interface ProviderConfig {
 }
 
 /** Default OpenAI-compatible body shared by every provider. */
-export function defaultBody(args: {
-  model: string;
-  effort: string;
-  system: string;
-  user: string;
-}): Record<string, unknown> {
+export function defaultBody(args: ModelRequest): Record<string, unknown> {
+  const content = args.images.length
+    ? [
+        { type: "text", text: args.user },
+        ...args.images.map((image) => ({
+          type: "image_url",
+          image_url: { url: image.dataUrl },
+        })),
+      ]
+    : args.user;
   return {
     model: args.model,
     stream: true,
     reasoning_effort: args.effort,
     messages: [
       { role: "system", content: args.system },
-      { role: "user", content: args.user },
+      { role: "user", content },
     ],
   };
 }
@@ -104,7 +118,7 @@ export const PROVIDERS: ProviderConfig[] = [
     label: "Meta",
     envVar: "META_API_KEY",
     baseUrlEnvVar: "META_BASE_URL",
-    baseUrl: "https://api.llama.com/compat/v1",
+    baseUrl: "https://api.meta.ai/v1",
     path: "/chat/completions",
     models: [
       {

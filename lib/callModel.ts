@@ -1,6 +1,7 @@
 import "server-only";
 
 import { defaultBody, getModel, getProvider, type ProviderConfig } from "./models";
+import type { PromptImage } from "./images";
 
 /**
  * Server-only. Never import this from a client component — it reads API keys
@@ -13,6 +14,7 @@ export interface CallModelArgs {
   effort: string;
   system: string;
   user: string;
+  images: PromptImage[];
   signal?: AbortSignal;
 }
 
@@ -103,7 +105,7 @@ export async function* callModel(args: CallModelArgs): AsyncGenerator<string> {
     );
   }
 
-  const base = { model: model.id, effort: args.effort, system: args.system, user: args.user };
+  const base = { model: model.id, effort: args.effort, system: args.system, user: args.user, images: args.images };
   const body = provider.buildBody
     ? provider.buildBody(base, defaultBody(base))
     : defaultBody(base);

@@ -69,13 +69,16 @@ Keep the same substance and care as the optimizer instructions above: cover the 
 
 For presentation, write in natural, direct language that a person can read and edit easily. Prefer a few coherent paragraphs and short lists when useful over a rigid agent specification with mandatory headings or numbered rules. Make instructions concrete without sounding formulaic or padded. Keep placeholders and any exact format requirements clear and editable. This presentation rule takes precedence over the generic direction above to use headed sections or numbered rules; it does not remove any necessary instruction.`;
 
+const IMAGE_CONTEXT = `The user attached one or more reference images with their text. Use what is visible in those images to understand and improve the prompt. Do not answer the underlying task or invent visual details. Return text only: images cannot be embedded in the finished prompt. When the finished prompt will need the original image, make that dependency explicit with a clear instruction to attach the reference image(s) when using the prompt. Do not substitute a guessed description for a required image.`;
+
 /**
  * Final system prompt for a run: mode prompt + optional template guidance.
  */
 export function buildSystemPrompt(
   mode: Mode,
   templateId: string,
-  optimizerStyle: OptimizerStyle = DEFAULT_OPTIMIZER_STYLE
+  optimizerStyle: OptimizerStyle = DEFAULT_OPTIMIZER_STYLE,
+  hasImages = false
 ): string {
   const base = mode === "optimizer" ? OPTIMIZER_SYSTEM : POLISHER_SYSTEM;
   const template = getTemplate(templateId);
@@ -92,6 +95,8 @@ export function buildSystemPrompt(
   if (mode === "optimizer" && optimizerStyle === "humanized") {
     sections.push(HUMANIZED_STYLE);
   }
+
+  if (hasImages) sections.push(IMAGE_CONTEXT);
 
   return sections.join("\n\n");
 }

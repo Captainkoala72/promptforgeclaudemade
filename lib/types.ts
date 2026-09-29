@@ -14,6 +14,7 @@ export interface Run {
   model: string;
   effort: string;
   input: string;
+  imageNames?: string[];
   output: string;
 }
 

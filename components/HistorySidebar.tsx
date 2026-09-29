@@ -69,7 +69,7 @@ export default function HistorySidebar({
         </div>
         {runs.length === 0 ? (
           <p className="px-5 py-6 text-sm leading-relaxed text-haze-500">
-            Your last {HISTORY_LIMIT} runs land here. They stay in this browser — nothing is uploaded.
+            Your last {HISTORY_LIMIT} runs land here. History stays in this browser.
           </p>
         ) : (
           <ul className="flex-1 overflow-y-auto p-3">
@@ -95,6 +95,7 @@ export default function HistorySidebar({
                     <p className="mt-1 truncate font-mono text-xs text-haze-500">
                       {model?.label ?? run.model} · {run.effort}
                       {template && template.id !== "general" ? " · " + template.label : ""}
+                      {run.imageNames?.length ? ` · ${run.imageNames.length} image${run.imageNames.length === 1 ? "" : "s"}` : ""}
                     </p>
                   </button>
                 </li>

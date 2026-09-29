@@ -1,5 +1,6 @@
 import type { Run } from "./types";
 import { DEFAULT_OPTIMIZER_STYLE } from "./optimizerStyle";
+import { MAX_IMAGES } from "./images";
 
 const STORAGE_KEY = "prompt-forge:history:v1";
 export const HISTORY_LIMIT = 20;
@@ -18,6 +19,9 @@ export function loadHistory(): Run[] {
       .map((run) => ({
         ...run,
         optimizerStyle: run.optimizerStyle === "humanized" ? "humanized" : DEFAULT_OPTIMIZER_STYLE,
+        imageNames: Array.isArray(run.imageNames)
+          ? run.imageNames.filter((name: unknown) => typeof name === "string").slice(0, MAX_IMAGES)
+          : [],
       }));
   } catch {
     return [];

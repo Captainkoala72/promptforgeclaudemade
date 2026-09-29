@@ -7,7 +7,9 @@ A single-user prompt workbench. Two modes:
 
 Optimizer has two output styles: **Full Agent** creates a structured, detailed prompt; **Humanized** keeps the same requirements in more natural wording that is easier to edit. The selected style is saved with each run. Templates include image and AI video generation alongside the other work types.
 
-Next.js (App Router) + TypeScript + Tailwind. No database, no auth, no accounts. History lives in your browser's localStorage.
+Attach up to three PNG, JPEG, or WebP reference images to either mode. Large images are resized in the browser; the combined request is limited to 2.5 MB of image data. The selected model receives the prompt text and images together. Images for completed runs are saved locally in IndexedDB so they can be restored from history; if browser storage is unavailable, reattach them before rerunning. Images are sent to the selected AI provider when you run a prompt.
+
+Next.js (App Router) + TypeScript + Tailwind. No server database, auth, or accounts. History stays in your browser.
 
 ## Setup
 
@@ -41,7 +43,7 @@ Optional overrides, if a provider's API root differs from the default in `lib/mo
 
 ### Check the endpoints before your first run
 
-Every provider is wired as an OpenAI-compatible `POST {baseUrl}/chat/completions` with `stream: true` and a `reasoning_effort` field. The base URLs and model IDs in `lib/models.ts` are my best guess at each provider's current API — confirm them against the provider's own docs. If one differs, you have three escape hatches, in increasing order of effort:
+Every provider is wired as an OpenAI-compatible `POST {baseUrl}/chat/completions` with `stream: true` and a `reasoning_effort` field. Image attachments use `text` and `image_url` content parts in the user message. The default endpoints and model IDs are documented by each provider, but you should still use API keys for your account and region. If an endpoint differs, you have three escape hatches, in increasing order of effort:
 
 1. Set that provider's `*_BASE_URL` env var.
 2. Edit the `baseUrl` / `path` / model `id` in `lib/models.ts`.
@@ -108,5 +110,6 @@ Both live in `lib/prompts.ts` as `OPTIMIZER_SYSTEM` and `POLISHER_SYSTEM`. Nothi
 ## Notes
 
 - History keeps the last 20 runs in localStorage under `prompt-forge:history:v1`. Clicking an entry restores the input, the output, and the settings that produced it. Older runs without an output style restore as Full Agent.
+- Reference images for those runs live separately in this browser's IndexedDB (`prompt-forge-images`) to avoid filling localStorage. Clearing history removes them too.
 - Provider errors are surfaced verbatim rather than replaced with a generic message — including a missing API key, an unsupported effort level, or a 429.
 - ⌘/Ctrl + Enter runs from the textarea.

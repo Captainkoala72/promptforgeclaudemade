@@ -14,6 +14,9 @@ import {
 import { DEFAULT_TEMPLATE, TEMPLATES, getTemplate } from "@/lib/templates";
 import { DEFAULT_OPTIMIZER_STYLE } from "@/lib/optimizerStyle";
 import { clearHistory, loadHistory, newId, saveHistory } from "@/lib/history";
+import { prepareImage } from "@/lib/clientImages";
+import { clearRunImages, loadRunImages, pruneRunImages, saveRunImages } from "@/lib/imageHistory";
+import { MAX_IMAGES, MAX_TOTAL_IMAGE_BYTES, type PromptImage } from "@/lib/images";
 import type { Mode, OptimizerStyle, Run, StreamEvent } from "@/lib/types";
 
 import HistorySidebar from "./HistorySidebar";
@@ -48,6 +51,12 @@ const OPTIMIZER_STYLES: { id: OptimizerStyle; label: string; description: string
 
 export default function Forge() {
   const [input, setInput] = useState("");
+  const [images, setImages] = useState<PromptImage[]>([]);
+  const [imageError, setImageError] = useState("");
+  const [addingImages, setAddingImages] = useState(false);
+  const [restoringImages, setRestoringImages] = useState(false);
+  const [requiredImageCount, setRequiredImageCount] = useState(0);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [mode, setMode] = useState<Mode>("optimizer");
   const [optimizerStyle, setOptimizerStyle] = useState<OptimizerStyle>(DEFAULT_OPTIMIZER_STYLE);
   const [templateId, setTemplateId] = useState(DEFAULT_TEMPLATE);
@@ -68,6 +77,8 @@ export default function Forge() {
   const abortRef = useRef<AbortController | null>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
   const historyButtonRef = useRef<HTMLButtonElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const restoreTokenRef = useRef(0);
 
   const provider = getProvider(providerId);
   const model = getModel(providerId, modelId);
@@ -76,7 +87,38 @@ export default function Forge() {
 
   useEffect(() => {
     setHistory(loadHistory());
+    setHistoryLoaded(true);
   }, []);
+
+  useEffect(() => {
+    if (historyLoaded) void pruneRunImages(history.map((run) => run.id)).catch(() => {});
+  }, [history, historyLoaded]);
+
+  async function addImages(files: FileList | null) {
+    if (!files?.length) return;
+    setAddingImages(true);
+    setImageError("");
+    try {
+      const next = [...images];
+      for (const file of Array.from(files)) {
+        if (next.length >= MAX_IMAGES) throw new Error(`Attach no more than ${MAX_IMAGES} images.`);
+        const image = await prepareImage(file);
+        if (next.reduce((sum, item) => sum + item.bytes, 0) + image.bytes > MAX_TOTAL_IMAGE_BYTES) {
+          throw new Error("Images must total 2.5 MB or less. Remove one or choose smaller images.");
+        }
+        next.push(image);
+      }
+      setImages(next);
+      if (requiredImageCount > next.length) {
+        setImageError(`Reattach ${requiredImageCount - next.length} more image${requiredImageCount - next.length === 1 ? "" : "s"} to rerun this history entry.`);
+      }
+    } catch (err) {
+      setImageError(err instanceof Error ? err.message : "Could not attach the image.");
+    } finally {
+      setAddingImages(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
 
   /** Model changed → snap effort to something this model actually supports. */
   useEffect(() => {
@@ -110,7 +152,7 @@ export default function Forge() {
 
   const generate = useCallback(async () => {
     const text = input.trim();
-    if (!text || streaming) return;
+    if (!text || streaming || addingImages || restoringImages || images.length < requiredImageCount) return;
 
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -138,6 +180,7 @@ export default function Forge() {
           provider: providerId,
           model: modelId,
           effort,
+          images: images.map(({ name, dataUrl }) => ({ name, dataUrl })),
         }),
         signal: controller.signal,
       });
@@ -199,7 +242,7 @@ export default function Forge() {
     }
 
     if (!failed && collected.trim()) {
-      commitRun({
+      const run: Run = {
         id: newId(),
         createdAt: Date.now(),
         mode,
@@ -209,10 +252,19 @@ export default function Forge() {
         model: modelId,
         effort,
         input: text,
+        imageNames: images.map((image) => image.name),
         output: collected,
-      });
+      };
+      if (images.length) {
+        try {
+          await saveRunImages(run.id, images);
+        } catch {
+          setImageError("The result was saved, but this browser could not keep its images for history.");
+        }
+      }
+      commitRun(run);
     }
-  }, [input, streaming, mode, optimizerStyle, templateId, providerId, modelId, effort, commitRun]);
+  }, [input, images, streaming, addingImages, restoringImages, requiredImageCount, mode, optimizerStyle, templateId, providerId, modelId, effort, commitRun]);
 
   function stop() {
     abortRef.current?.abort();
@@ -227,7 +279,11 @@ export default function Forge() {
   }
 
   function restore(run: Run) {
+    const token = ++restoreTokenRef.current;
     stop();
+    setImages([]);
+    setImageError("");
+    setRequiredImageCount(run.imageNames?.length ?? 0);
     setInput(run.input);
     setOutput(run.output);
     setResultMode(run.mode);
@@ -244,12 +300,29 @@ export default function Forge() {
     setActiveRunId(run.id);
     setSidebarOpen(false);
     historyButtonRef.current?.focus();
+    if (run.imageNames?.length) {
+      setRestoringImages(true);
+      void loadRunImages(run.id).then((saved) => {
+        if (restoreTokenRef.current !== token) return;
+        setImages(saved);
+        if (saved.length === run.imageNames?.length) setRequiredImageCount(0);
+        else setImageError("This run's images are unavailable in this browser. Reattach them to run it again.");
+      }).catch(() => {
+        if (restoreTokenRef.current === token) setImageError("Could not restore this run's images. Reattach them to run it again.");
+      }).finally(() => {
+        if (restoreTokenRef.current === token) setRestoringImages(false);
+      });
+    } else {
+      setRestoringImages(false);
+    }
   }
 
   function handleClearHistory() {
+    ++restoreTokenRef.current;
     clearHistory();
     setHistory([]);
     setActiveRunId(null);
+    void clearRunImages().catch(() => {});
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -332,6 +405,49 @@ export default function Forge() {
                   </div>
                 </div>
                 <div className="border-t border-ink-600 pt-6">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-haze-100">Reference images</p>
+                      <p className="mt-1 text-xs leading-relaxed text-haze-500">Optional · up to 3 PNG, JPEG, or WebP images · 2.5 MB combined</p>
+                    </div>
+                    <input
+                      ref={fileInputRef}
+                      id="image-attachments"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      multiple
+                      hidden
+                      tabIndex={-1}
+                      onChange={(event) => void addImages(event.target.files)}
+                    />
+                    <Button type="button" onClick={() => fileInputRef.current?.click()} disabled={addingImages || restoringImages || images.length >= MAX_IMAGES}>
+                      {addingImages ? "Preparing..." : "Attach images"}
+                    </Button>
+                  </div>
+                  {images.length ? (
+                    <ul className="mt-4 grid gap-3 sm:grid-cols-3" aria-label="Attached images">
+                      {images.map((image, index) => (
+                        <li key={`${image.name}-${index}`} className="relative min-w-0 rounded-[12px] border border-ink-600 bg-ink-900 p-2">
+                          <Image src={image.dataUrl} alt={`Attached image ${index + 1}: ${image.name}`} width={180} height={112} unoptimized className="h-28 w-full rounded-[7px] object-contain" />
+                          <div className="mt-2 flex items-center gap-1">
+                            <span className="min-w-0 flex-1 truncate text-xs text-haze-300" title={image.name}>{image.name}</span>
+                            <button type="button" aria-label={`Remove ${image.name}`} onClick={() => { setImages((current) => current.filter((_, i) => i !== index)); setImageError(""); }} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-haze-300 hover:bg-ink-700 hover:text-haze-100">
+                              <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true"><path d="M4 4l12 12M16 4 4 16" /></svg>
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {imageError ? <p role="alert" className="mt-3 text-sm text-[#ffb4bf]">{imageError}</p> : null}
+                  {requiredImageCount > images.length ? (
+                    <button type="button" onClick={() => { setRequiredImageCount(0); setImageError(""); }} className="mt-2 text-xs font-medium text-haze-300 underline underline-offset-4 hover:text-haze-100">
+                      Continue without the previous images
+                    </button>
+                  ) : null}
+                  <p className="mt-3 text-xs leading-relaxed text-haze-500">Images are sent to the selected model. Successful runs keep them in this browser for history.</p>
+                </div>
+                <div className="border-t border-ink-600 pt-6">
                   <p id="mode-label" className="mb-2 text-sm font-medium text-haze-100">How should it be shaped?</p>
                   <div role="group" aria-labelledby="mode-label" className="grid grid-cols-2 gap-2">
                     {MODES.map((m) => {
@@ -397,7 +513,7 @@ export default function Forge() {
                   </div>
                 </div>
                 <div className="flex gap-2 border-t border-ink-600 pt-6">
-                  <Button variant="primary" onClick={() => void generate()} disabled={streaming || !input.trim()} className="flex-1 text-[15px]">
+                  <Button variant="primary" onClick={() => void generate()} disabled={streaming || addingImages || restoringImages || images.length < requiredImageCount || !input.trim()} className="flex-1 text-[15px]">
                     {streaming ? "Running..." : mode === "optimizer" ? "Build prompt" : "Polish prompt"}
                   </Button>
                   {streaming ? <Button onClick={stop}>Stop</Button> : null}
@@ -411,7 +527,7 @@ export default function Forge() {
                   mode={output || streaming || error ? resultMode : mode}
                   optimizerStyle={output || streaming || error ? resultStyle : optimizerStyle}
                   onRerun={handleRerun}
-                  canRerun={!streaming && input.trim().length > 0}
+                  canRerun={!streaming && !addingImages && !restoringImages && images.length >= requiredImageCount && input.trim().length > 0}
                 />
               </div>
             </div>
