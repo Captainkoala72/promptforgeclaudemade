@@ -1,115 +1,91 @@
 # Prompt Forge
 
-A single-user prompt workbench. Two modes:
+A single-user prompt workbench built with Next.js, TypeScript, and Tailwind.
 
-- **Optimizer** — takes a rough idea and rebuilds it into a full engineered prompt (role, context, constraints, output format, edge cases). Output is usually much longer than the input.
-- **Polisher** - takes a prompt you already wrote and cleans it up without changing what it asks for. Output stays close to the original length and voice.
-
-Optimizer has two output styles: **Full Agent** creates a structured, detailed prompt; **Humanized** keeps the same requirements in more natural wording that is easier to edit. The selected style is saved with each run. Templates include image and AI video generation alongside the other work types.
-
-Attach or paste up to three PNG, JPEG, or WebP reference images to either mode. Copy an image, focus the paste area or prompt editor, and press Ctrl/⌘ + V. Large images are resized in the browser; the combined request is limited to 2.5 MB of image data. The selected model receives the prompt text and images together. Images for completed runs are saved locally in IndexedDB so they can be restored from history; if browser storage is unavailable, reattach them before rerunning. Images are sent to the selected AI provider when you run a prompt.
-
-Next.js (App Router) + TypeScript + Tailwind. No server database, auth, or accounts. History stays in your browser.
+- **Optimizer** turns a rough idea into a complete prompt. Choose **Full Agent** for a structured specification or **Humanized** for natural wording.
+- **Polisher** edits an existing prompt while preserving its intent, voice, and approximate length.
+- **Instructions for the AI** is a separate, optional text field. Use it to steer the edit: "Keep my casual voice", "Don't add sections", or "Verify the referenced API". It is sent as editor guidance in each provider's system/instructions field. The original prompt stays in the user message.
+- **Web search** is optional and off by default. Each model remembers its own toggle during the session. The model decides whether research is useful; turning it on makes the tool available rather than forcing every run to search.
+- Attach or paste up to three PNG, JPEG, or WebP reference images (2.5 MB combined). Images are sent to the selected provider.
+- Completed runs save the original prompt, editor instructions, model, effort, search setting, sources, and output in browser history. Images are stored separately in IndexedDB. Old entries restore with empty instructions and search off.
 
 ## Setup
 
-Requires Node 18.17+.
+Requires Node.js 20.9+.
 
-```bash
-npm install
+~~~bash
+npm ci
 cp .env.example .env.local
-```
-
-Fill in the keys you plan to use in `.env.local`. You only need a key for the providers you actually select — the app tells you which one is missing if you pick a provider you haven't configured.
-
-```bash
 npm run dev
-```
+~~~
 
-Open http://localhost:3000.
-
-## Environment variables
-
-All four are server-side only. **Never** rename these with a `NEXT_PUBLIC_` prefix — that would ship your keys to the browser.
+Add keys only for the providers you use. All keys are server-side; never prefix them with NEXT_PUBLIC_.
 
 | Variable | Provider |
 |---|---|
-| `ZAI_API_KEY` | Z.ai |
-| `DEEPSEEK_API_KEY` | DeepSeek |
-| `META_API_KEY` | Meta |
-| `MOONSHOT_API_KEY` | Moonshot |
+| ZAI_API_KEY | Z.ai; also supplies the search service used by DeepSeek |
+| DEEPSEEK_API_KEY | DeepSeek |
+| META_API_KEY | Meta |
+| MOONSHOT_API_KEY | Moonshot |
+| ANTHROPIC_API_KEY | Anthropic |
 
-Optional overrides, if a provider's API root differs from the default in `lib/models.ts`: `ZAI_BASE_URL`, `DEEPSEEK_BASE_URL`, `META_BASE_URL`, `MOONSHOT_BASE_URL`.
+Optional API root overrides: ZAI_BASE_URL, DEEPSEEK_BASE_URL, META_BASE_URL, MOONSHOT_BASE_URL, ANTHROPIC_BASE_URL. These are roots, without the final endpoint path. ZAI_SEARCH_BASE_URL independently overrides the Z.ai search API root (default https://api.z.ai/api/paas/v4).
 
-### Check the endpoints before your first run
+## Models and web search
 
-Every provider is wired as an OpenAI-compatible `POST {baseUrl}/chat/completions` with `stream: true` and a `reasoning_effort` field. Image attachments use `text` and `image_url` content parts in the user message. The default endpoints and model IDs are documented by each provider, but you should still use API keys for your account and region. If an endpoint differs, you have three escape hatches, in increasing order of effort:
+| Model | API and reasoning | Search integration |
+|---|---|---|
+| GLM 5.3 Flash | Chat Completions; thinking enabled; low/high/max | Function calling backed by Z.ai POST /web_search |
+| DeepSeek Flash | Chat Completions; thinking enabled; low/high/max | Function calling backed by Z.ai POST /web_search; requires both keys |
+| Muse Spark 1.3 | Meta Responses; reasoning.effort low/medium/high/xhigh | Meta's hosted web_search tool |
+| Kimi K3 | Chat Completions; reasoning_effort low/high/max | Kimi's builtin_function named $web_search; returned arguments are echoed unchanged |
+| Claude Haiku 5.5 | Anthropic Messages; thinking.type adaptive; output_config.effort medium/high/xhigh/max | Anthropic's hosted web_search_20260318 tool with direct calling |
 
-1. Set that provider's `*_BASE_URL` env var.
-2. Edit the `baseUrl` / `path` / model `id` in `lib/models.ts`.
-3. Give the provider its own `buildBody` and/or `extractDelta` in the same object — the request body and the stream parsing are both overridable per provider.
+Claude uses ANTHROPIC_API_KEY in the x-api-key header and the anthropic-version header. It uses Anthropic image source blocks, never OpenAI image_url blocks. Temperature and manual thinking budgets are omitted. Search tools are included only when the toggle is on. No local shell, filesystem, or arbitrary code tools are exposed.
+
+Search loops preserve required reasoning and tool IDs. Claude pause_turn continuations replay signed thinking and encrypted search blocks. Client tool loops and server-tool continuations stop after six requests. Anthropic search is capped at five uses per request. Search failures, provider errors, output limits, empty responses, and interrupted streams surface as errors instead of successful history entries. Stop cancels the upstream request.
+
+Research sources appear as clickable links separately from the copyable prompt. Research-enabled runs buffer the final text so tool preambles are kept out of the prompt. Provider thinking stays server-side.
+
+Official references:
+- [GLM 5.3 Flash](https://docs.z.ai/guides/vlm/glm-5.3-flash) and [Z.ai Web Search](https://docs.z.ai/api-reference/tools/web-search)
+- [DeepSeek Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/) (only function tools are supported)
+- [Meta search grounding](https://dev.meta.ai/docs/search-grounding) and [Responses API](https://dev.meta.ai/docs/protocols/responses)
+- [Kimi web search](https://platform.moonshot.ai/docs/guide/use-web-search)
+- [Claude Haiku 5.5](https://platform.claude.com/docs/en/models/haiku-5-5/overview), [effort](https://platform.claude.com/docs/en/build-with-claude/effort), and [web search](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool)
+
+## Validation
+
+~~~bash
+npm test
+npm run typecheck
+npm run build
+npx playwright install chromium
+npm run test:browser
+~~~
+
+The Node suite uses mocked provider streams to test the exact request shapes, all four Claude efforts, fragmented SSE, tool continuations, citations, errors, validation, and old history. Browser tests run against a production build and verify all five model selections, separate instruction routing, per-model toggles, persisted history, mobile layout, and interrupted output. On Windows with Edge installed, set PLAYWRIGHT_CHANNEL=msedge instead of downloading Chromium.
+
+GitHub Actions runs these checks on pushes and pull requests. Tests use dummy keys and do not call paid APIs. Live access still depends on valid provider keys, account permissions, quota, and tool availability.
 
 ## Deploy to Vercel
 
-1. Push this repo to GitHub.
-2. In Vercel, **Add New → Project**, import the repo. Framework preset auto-detects as Next.js; leave the build settings alone.
-3. Before deploying, go to **Settings → Environment Variables** and add the four keys above for the Production, Preview, and Development environments.
-4. Deploy.
+This repository is connected to https://promptforgeclaudemade.vercel.app. Pushing main triggers production deployment.
 
-If you add or change a key later, redeploy — Vercel bakes env vars in at build time for server routes.
+1. Add ANTHROPIC_API_KEY in the Vercel project's environment settings (Production and Preview as needed). Keep the other provider keys.
+2. For DeepSeek web search, ensure ZAI_API_KEY is also configured. The Z.ai account must permit the standalone search service; a coding-only subscription may not cover it.
+3. Anthropic web search must be permitted by your organization's Claude Console settings.
+4. Use Node.js 20.9+ and enable Vercel Fluid compute. The generation route allows 300 seconds, with a 290-second application timeout and 15-second SSE keepalives. [Vercel duration limits](https://vercel.com/docs/functions/configuring-functions/duration).
+5. Redeploy after changing environment variables. Secrets stay out of source control and browser bundles.
 
-Note `maxDuration = 60` in `app/api/generate/route.ts`. Vercel's Hobby plan caps serverless functions at 60s; lower it if you're on a plan with a tighter limit, or raise it on Pro.
+## Structure
 
-## How it's put together
+- app/api/generate/route.ts validates input and emits normalized SSE events.
+- lib/models.ts defines the model catalogue and provider-specific request bodies.
+- lib/callModel.ts handles authentication, provider streams, tool calls, search, and sources.
+- lib/prompts.ts builds mode instructions, template guidance, image context, and separate editor guidance.
+- components/Forge.tsx manages controls, attachments, streaming, and history.
+- components/OutputPanel.tsx displays the prompt and source links.
+- lib/history.ts stores the last 20 completed runs in localStorage; lib/imageHistory.ts stores images in IndexedDB.
 
-```
-app/
-  api/generate/route.ts   SSE endpoint — the only place API keys are touched
-  layout.tsx  page.tsx  globals.css
-lib/
-  models.ts               provider + model catalogue (config array)
-  templates.ts            template catalogue (config array)
-  prompts.ts              both mode system prompts
-  callModel.ts            server-only; normalizes all providers
-  history.ts  types.ts
-components/
-  Forge.tsx               page state, controls, stream reader
-  OutputPanel.tsx  HistorySidebar.tsx  ui.tsx
-```
-
-The browser posts to `/api/generate` and reads an SSE stream back. It never sees a key and never talks to a provider directly.
-
-### Adding a provider
-
-Append one object to `PROVIDERS` in `lib/models.ts`:
-
-```ts
-{
-  id: "acme",
-  label: "Acme",
-  envVar: "ACME_API_KEY",
-  baseUrlEnvVar: "ACME_BASE_URL",
-  baseUrl: "https://api.acme.ai/v1",
-  path: "/chat/completions",
-  models: [
-    { id: "acme-1", label: "Acme 1", efforts: ["low", "high"], defaultEffort: "high" },
-  ],
-}
-```
-
-The dropdowns, validation, and route handler all read from that array. Add the matching key to `.env.example` and your deployment.
-
-### Adding a template
-
-Append one object to `TEMPLATES` in `lib/templates.ts`. `guidance` is appended to whichever mode prompt is active, so write it as instructions to the model about the target output shape.
-
-### Editing the mode prompts
-
-Both live in `lib/prompts.ts` as `OPTIMIZER_SYSTEM` and `POLISHER_SYSTEM`. Nothing else in the app hardcodes prompt text.
-
-## Notes
-
-- History keeps the last 20 runs in localStorage under `prompt-forge:history:v1`. Clicking an entry restores the input, the output, and the settings that produced it. Older runs without an output style restore as Full Agent.
-- Reference images for those runs live separately in this browser's IndexedDB (`prompt-forge-images`) to avoid filling localStorage. Clearing history removes them too.
-- Provider errors are surfaced verbatim rather than replaced with a generic message — including a missing API key, an unsupported effort level, or a 429.
-- ⌘/Ctrl + Enter runs from the textarea.
+Cmd/Ctrl + Enter runs from either text field. History and image storage stay in the browser.

@@ -3,11 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 
 import { countWords } from "@/lib/history";
-import type { OptimizerStyle } from "@/lib/types";
+import type { OptimizerStyle, Source } from "@/lib/types";
 import { Button } from "./ui";
 
 interface OutputPanelProps {
   output: string;
+  sources: Source[];
   streaming: boolean;
   error: { message: string; provider?: string } | null;
   mode: "optimizer" | "polisher";
@@ -18,6 +19,7 @@ interface OutputPanelProps {
 
 export default function OutputPanel({
   output,
+  sources,
   streaming,
   error,
   mode,
@@ -70,7 +72,7 @@ export default function OutputPanel({
         {streaming ? (
           <span role="status" className="flex items-center gap-1.5 text-xs text-ember">
             <span className="h-1.5 w-1.5 animate-pulseDot rounded-full bg-current" />
-            Writing
+            Working
           </span>
         ) : null}
 
@@ -129,6 +131,16 @@ export default function OutputPanel({
           </div>
         )}
       </div>
+      {sources.length ? (
+        <div className="border-t border-ink-600 px-5 py-4 sm:px-6">
+          <p className="text-xs font-semibold text-haze-300">Research sources</p>
+          <ul className="mt-2 space-y-2">
+            {sources.map((source) => (
+              <li key={source.url}><a href={source.url} target="_blank" rel="noopener noreferrer" className="break-words text-xs text-ember underline underline-offset-4 hover:text-haze-100">{source.title}</a></li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {hasOutput ? (
         <footer className="border-t border-ink-600 px-5 py-3 text-xs tabular-nums text-haze-500 sm:hidden">

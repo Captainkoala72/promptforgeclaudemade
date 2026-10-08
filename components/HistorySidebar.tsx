@@ -96,6 +96,7 @@ export default function HistorySidebar({
                       {model?.label ?? run.model} · {run.effort}
                       {template && template.id !== "general" ? " · " + template.label : ""}
                       {run.imageNames?.length ? ` · ${run.imageNames.length} image${run.imageNames.length === 1 ? "" : "s"}` : ""}
+                      {run.webSearch ? " · web search" : ""}
                     </p>
                   </button>
                 </li>
