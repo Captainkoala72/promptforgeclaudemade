@@ -4,14 +4,13 @@
  * Adding a provider is a one-object change: append to PROVIDERS below.
  * Everything else (UI dropdowns, validation, the API route) reads from here.
  *
- * Each provider is assumed to expose an OpenAI-compatible
- * POST {baseUrl}/chat/completions endpoint with SSE streaming. If a provider
- * differs, give it its own `buildBody` and/or `extractDelta`.
+ * Each adapter declares its wire protocol. Chat Completions, Meta Responses,
+ * and Anthropic Messages each have their own streaming and tool handling.
  */
 
 import type { PromptImage } from "./images";
 
-export type ProviderId = "zai" | "deepseek" | "meta" | "moonshot";
+export type ProviderId = "zai" | "deepseek" | "meta" | "moonshot" | "anthropic";
 
 export interface ModelRequest {
   model: string;
@@ -19,6 +18,7 @@ export interface ModelRequest {
   system: string;
   user: string;
   images: PromptImage[];
+  webSearch: boolean;
 }
 
 export interface ModelConfig {
@@ -43,9 +43,11 @@ export interface ProviderConfig {
   baseUrlEnvVar: string;
   /** Default API root, no trailing slash. */
   baseUrl: string;
-  /** Path appended to baseUrl for chat completions. */
+  /** Path appended to baseUrl. */
   path: string;
   models: ModelConfig[];
+  protocol?: "chat" | "responses" | "anthropic";
+  searchNote: string;
   /**
    * Optional override for the request body. Receives the normalized args and
    * the default OpenAI-compatible body; return the body to actually send.
@@ -54,8 +56,6 @@ export interface ProviderConfig {
     args: ModelRequest,
     defaultBody: Record<string, unknown>
   ) => Record<string, unknown>;
-  /** Optional override for pulling text out of a streamed SSE chunk. */
-  extractDelta?: (chunk: any) => string;
 }
 
 /** Default OpenAI-compatible body shared by every provider. */
@@ -88,6 +88,8 @@ export const PROVIDERS: ProviderConfig[] = [
     baseUrlEnvVar: "ZAI_BASE_URL",
     baseUrl: "https://api.z.ai/api/paas/v4",
     path: "/chat/completions",
+    searchNote: "Searches the web through Z.ai when useful.",
+    buildBody: (_args, body) => ({ ...body, thinking: { type: "enabled", clear_thinking: false }, tool_stream: true, max_tokens: 32768 }),
     models: [
       {
         id: "glm-5.3-flash",
@@ -104,6 +106,8 @@ export const PROVIDERS: ProviderConfig[] = [
     baseUrlEnvVar: "DEEPSEEK_BASE_URL",
     baseUrl: "https://api.deepseek.com/v1",
     path: "/chat/completions",
+    searchNote: "Uses Z.ai search with DeepSeek. Requires ZAI_API_KEY as well as DEEPSEEK_API_KEY.",
+    buildBody: (_args, body) => ({ ...body, thinking: { type: "enabled" }, max_tokens: 32768 }),
     models: [
       {
         id: "deepseek-flash",
@@ -119,7 +123,22 @@ export const PROVIDERS: ProviderConfig[] = [
     envVar: "META_API_KEY",
     baseUrlEnvVar: "META_BASE_URL",
     baseUrl: "https://api.meta.ai/v1",
-    path: "/chat/completions",
+    path: "/responses",
+    protocol: "responses",
+    searchNote: "Uses Meta's built-in web search and cited sources.",
+    buildBody: (args) => ({
+      model: args.model,
+      stream: true,
+      store: false,
+      instructions: args.system,
+      reasoning: { effort: args.effort },
+      max_output_tokens: 32768,
+      input: [{ role: "user", content: [
+        { type: "input_text", text: args.user },
+        ...args.images.map((image) => ({ type: "input_image", image_url: image.dataUrl })),
+      ] }],
+      ...(args.webSearch ? { tools: [{ type: "web_search" }], tool_choice: "auto" } : {}),
+    }),
     models: [
       {
         id: "muse-spark-1.3",
@@ -136,6 +155,8 @@ export const PROVIDERS: ProviderConfig[] = [
     baseUrlEnvVar: "MOONSHOT_BASE_URL",
     baseUrl: "https://api.moonshot.ai/v1",
     path: "/chat/completions",
+    searchNote: "Uses Kimi's built-in web search when useful.",
+    buildBody: (_args, body) => ({ ...body, max_tokens: 32768 }),
     models: [
       {
         id: "kimi-k3",
@@ -144,6 +165,42 @@ export const PROVIDERS: ProviderConfig[] = [
         defaultEffort: "high",
       },
     ],
+  },
+  {
+    id: "anthropic",
+    label: "Anthropic",
+    envVar: "ANTHROPIC_API_KEY",
+    baseUrlEnvVar: "ANTHROPIC_BASE_URL",
+    baseUrl: "https://api.anthropic.com/v1",
+    path: "/messages",
+    protocol: "anthropic",
+    searchNote: "Uses Claude's built-in web search with adaptive thinking.",
+    models: [{
+      id: "claude-haiku-5-5",
+      label: "Claude Haiku 5.5",
+      efforts: ["medium", "high", "xhigh", "max"],
+      defaultEffort: "medium",
+      note: "Adaptive thinking is enabled at every effort level.",
+    }],
+    buildBody: (args) => ({
+      model: args.model,
+      stream: true,
+      max_tokens: 32768,
+      system: args.system,
+      thinking: { type: "adaptive" },
+      output_config: { effort: args.effort },
+      messages: [{ role: "user", content: [
+        { type: "text", text: args.user },
+        ...args.images.map((image) => {
+          const [header, data] = image.dataUrl.split(",");
+          return { type: "image", source: { type: "base64", media_type: header.slice(5).split(";")[0], data } };
+        }),
+      ] }],
+      ...(args.webSearch ? {
+        tools: [{ type: "web_search_20260318", name: "web_search", max_uses: 5, allowed_callers: ["direct"] }],
+        tool_choice: { type: "auto" },
+      } : {}),
+    }),
   },
 ];
 

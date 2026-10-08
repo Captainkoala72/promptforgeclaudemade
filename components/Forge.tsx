@@ -17,7 +17,7 @@ import { clearHistory, loadHistory, newId, saveHistory } from "@/lib/history";
 import { prepareImage } from "@/lib/clientImages";
 import { clearRunImages, loadRunImages, pruneRunImages, saveRunImages } from "@/lib/imageHistory";
 import { MAX_IMAGES, MAX_TOTAL_IMAGE_BYTES, type PromptImage } from "@/lib/images";
-import type { Mode, OptimizerStyle, Run, StreamEvent } from "@/lib/types";
+import type { Mode, OptimizerStyle, Run, Source, StreamEvent } from "@/lib/types";
 
 import HistorySidebar from "./HistorySidebar";
 import OutputPanel from "./OutputPanel";
@@ -51,6 +51,9 @@ const OPTIMIZER_STYLES: { id: OptimizerStyle; label: string; description: string
 
 export default function Forge() {
   const [input, setInput] = useState("");
+  const [instructions, setInstructions] = useState("");
+  const [searchByModel, setSearchByModel] = useState<Record<string, boolean>>({});
+  const [sources, setSources] = useState<Source[]>([]);
   const [images, setImages] = useState<PromptImage[]>([]);
   const [imageError, setImageError] = useState("");
   const [addingImages, setAddingImages] = useState(false);
@@ -83,6 +86,8 @@ export default function Forge() {
 
   const provider = getProvider(providerId);
   const model = getModel(providerId, modelId);
+  const searchKey = `${providerId}:${modelId}`;
+  const webSearch = searchByModel[searchKey] ?? false;
   const template = getTemplate(templateId);
   const efforts = useMemo(() => model?.efforts ?? [], [model]);
 
@@ -180,21 +185,23 @@ export default function Forge() {
 
   const generate = useCallback(async () => {
     const text = input.trim();
-    if (!text || streaming || addingImages || restoringImages || images.length < requiredImageCount) return;
+    if (!text || streaming || abortRef.current || addingImages || restoringImages || images.length < requiredImageCount) return;
 
-    abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
     setStreaming(true);
     setError(null);
     setOutput("");
+    setSources([]);
     setResultMode(mode);
     setResultStyle(optimizerStyle);
     setActiveRunId(null);
 
     let collected = "";
     let failed = false;
+    let completed = false;
+    const collectedSources: Source[] = [];
 
     try {
       const res = await fetch("/api/generate", {
@@ -202,6 +209,8 @@ export default function Forge() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           input: text,
+          instructions: instructions.trim(),
+          webSearch,
           mode,
           optimizerStyle: mode === "optimizer" ? optimizerStyle : DEFAULT_OPTIMIZER_STYLE,
           template: templateId,
@@ -254,22 +263,34 @@ export default function Forge() {
           } else if (event.type === "error") {
             failed = true;
             setError({ message: event.message, provider: event.provider });
+          } else if (event.type === "source") {
+            if (/^https?:\/\//i.test(event.source.url) && !collectedSources.some((source) => source.url === event.source.url)) {
+              collectedSources.push(event.source);
+              setSources([...collectedSources]);
+            }
+          } else if (event.type === "done") {
+            completed = true;
           }
         }
       }
     } catch (err: any) {
-      if (err?.name !== "AbortError") {
+      if (!controller.signal.aborted && err?.name !== "AbortError") {
         failed = true;
         setError({
           message: err?.message ? String(err.message) : "The connection dropped mid-run.",
         });
       }
     } finally {
-      setStreaming(false);
-      abortRef.current = null;
+      if (abortRef.current === controller) {
+        setStreaming(false);
+        abortRef.current = null;
+      }
     }
 
-    if (!failed && collected.trim()) {
+    if (!failed && !completed && !controller.signal.aborted) {
+      setError({ message: "The connection ended before the run finished. Please retry." });
+    }
+    if (!failed && completed && !controller.signal.aborted && collected.trim()) {
       const run: Run = {
         id: newId(),
         createdAt: Date.now(),
@@ -280,6 +301,9 @@ export default function Forge() {
         model: modelId,
         effort,
         input: text,
+        instructions: instructions.trim(),
+        webSearch,
+        sources: collectedSources,
         imageNames: images.map((image) => image.name),
         output: collected,
       };
@@ -292,7 +316,7 @@ export default function Forge() {
       }
       commitRun(run);
     }
-  }, [input, images, streaming, addingImages, restoringImages, requiredImageCount, mode, optimizerStyle, templateId, providerId, modelId, effort, commitRun]);
+  }, [input, instructions, webSearch, images, streaming, addingImages, restoringImages, requiredImageCount, mode, optimizerStyle, templateId, providerId, modelId, effort, commitRun]);
 
   function stop() {
     abortRef.current?.abort();
@@ -313,6 +337,9 @@ export default function Forge() {
     setImageError("");
     setRequiredImageCount(run.imageNames?.length ?? 0);
     setInput(run.input);
+    setInstructions(run.instructions ?? "");
+    setSources(run.sources ?? []);
+    setSearchByModel((current) => ({ ...current, [`${run.provider}:${run.model}`]: run.webSearch === true }));
     setOutput(run.output);
     setResultMode(run.mode);
     setResultStyle(run.optimizerStyle);
@@ -433,6 +460,22 @@ export default function Forge() {
                   </div>
                 </div>
                 <div className="border-t border-ink-600 pt-6">
+                  <label htmlFor="ai-instructions" className="mb-2 block text-sm font-medium text-haze-100">Instructions for the AI <span className="font-normal text-haze-500">· optional</span></label>
+                  <p id="ai-instructions-hint" className="mb-3 text-xs leading-relaxed text-haze-500">Tell the AI how to optimize or polish your prompt. These directions guide the edit and stay separate from the original prompt.</p>
+                  <textarea
+                    id="ai-instructions"
+                    aria-describedby="ai-instructions-hint"
+                    value={instructions}
+                    onChange={(event) => setInstructions(event.target.value)}
+                    onKeyDown={handleKeyDown}
+                    maxLength={8000}
+                    rows={4}
+                    placeholder="Keep my casual voice. Tighten the wording. Preserve my placeholders and don't add extra sections."
+                    className="min-h-[120px] w-full resize-y rounded-[12px] border border-ink-600 bg-ink-900 p-4 text-sm leading-[1.7] text-haze-100 placeholder:text-haze-500 focus:border-ember focus:outline-none"
+                  />
+                  <p className="mt-2 text-xs tabular-nums text-haze-500">{instructions.length.toLocaleString()} / 8,000 characters</p>
+                </div>
+                <div className="border-t border-ink-600 pt-6">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <p className="text-sm font-medium text-haze-100">Reference images</p>
@@ -535,12 +578,20 @@ export default function Forge() {
                       {provider?.models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
                     </Select>
                   </Field>
+                  {model?.note ? <p className="text-xs leading-relaxed text-haze-500 sm:col-span-2">{model.note}</p> : null}
                   <div className="sm:col-span-2">
                     <Field label="Reasoning effort" htmlFor="effort" hint={"Supported by " + (model?.label ?? "this model") + ": " + efforts.join(", ")}>
                       <Select id="effort" value={effort} onChange={(e) => setEffort(e.target.value)}>
                         {efforts.map((level) => <option key={level} value={level}>{level}</option>)}
                       </Select>
                     </Field>
+                  </div>
+                  <div className="rounded-[12px] border border-ink-600 bg-ink-900 p-4 sm:col-span-2">
+                    <label htmlFor="web-search" className="flex cursor-pointer items-center justify-between gap-4 text-sm font-medium text-haze-100">
+                      <span>Web search</span>
+                      <input id="web-search" type="checkbox" role="switch" checked={webSearch} onChange={(event) => setSearchByModel((current) => ({ ...current, [searchKey]: event.target.checked }))} aria-describedby="web-search-hint" className="h-5 w-5 accent-[#ff6a1a]" />
+                    </label>
+                    <p id="web-search-hint" className="mt-2 text-xs leading-relaxed text-haze-500">{provider?.searchNote} Saved separately for each model during this session. Search may add time and provider charges.</p>
                   </div>
                 </div>
                 <div className="flex gap-2 border-t border-ink-600 pt-6">
@@ -553,6 +604,7 @@ export default function Forge() {
               <div className="min-w-0 lg:sticky lg:top-[92px]">
                 <OutputPanel
                   output={output}
+                  sources={sources}
                   streaming={streaming}
                   error={error}
                   mode={output || streaming || error ? resultMode : mode}

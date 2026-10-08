@@ -19,6 +19,11 @@ export function loadHistory(): Run[] {
       .map((run) => ({
         ...run,
         optimizerStyle: run.optimizerStyle === "humanized" ? "humanized" : DEFAULT_OPTIMIZER_STYLE,
+        instructions: typeof run.instructions === "string" ? run.instructions : "",
+        webSearch: run.webSearch === true,
+        sources: Array.isArray(run.sources)
+          ? run.sources.filter((source: any) => typeof source?.title === "string" && typeof source?.url === "string" && /^https?:\/\//i.test(source.url)).slice(0, 30)
+          : [],
         imageNames: Array.isArray(run.imageNames)
           ? run.imageNames.filter((name: unknown) => typeof name === "string").slice(0, MAX_IMAGES)
           : [],

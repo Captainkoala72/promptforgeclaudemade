@@ -6,7 +6,7 @@ import { MAX_IMAGE_BYTES, MAX_IMAGES, MAX_TOTAL_IMAGE_BYTES, type PromptImage } 
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 interface GenerateBody {
   input?: unknown;
@@ -17,6 +17,8 @@ interface GenerateBody {
   model?: unknown;
   effort?: unknown;
   images?: unknown;
+  instructions?: unknown;
+  webSearch?: unknown;
 }
 
 const MAX_INPUT_CHARS = 30_000;
@@ -76,6 +78,20 @@ export async function POST(req: NextRequest) {
     return Response.json({ message: "Request body isn't valid JSON." }, { status: 400 });
   }
 
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return Response.json({ message: "Request body must be an object." }, { status: 400 });
+  }
+  if (body.instructions !== undefined && typeof body.instructions !== "string") {
+    return Response.json({ message: "AI instructions must be text." }, { status: 400 });
+  }
+  if (body.webSearch !== undefined && typeof body.webSearch !== "boolean") {
+    return Response.json({ message: "Web search must be true or false." }, { status: 400 });
+  }
+  const instructions = typeof body.instructions === "string" ? body.instructions.trim() : "";
+  if (instructions.length > 8000) {
+    return Response.json({ message: "Keep AI instructions to 8,000 characters or fewer." }, { status: 413 });
+  }
+  const webSearch = body.webSearch === true;
   const input = typeof body.input === "string" ? body.input.trim() : "";
   const mode = body.mode === "polisher" ? "polisher" : "optimizer";
   const optimizerStyle = body.optimizerStyle === "humanized" ? "humanized" : "full-agent";
@@ -101,30 +117,40 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const system = buildSystemPrompt(mode as Mode, template, optimizerStyle, parsedImages.images.length > 0);
+  const system = buildSystemPrompt(mode as Mode, template, optimizerStyle, parsedImages.images.length > 0, instructions, webSearch);
   const encoder = new TextEncoder();
+  const generation = new AbortController();
+  const signal = AbortSignal.any([req.signal, generation.signal]);
+  let closed = false;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (event: Record<string, unknown>) => {
-        controller.enqueue(encoder.encode(sse(event)));
+        if (!closed) controller.enqueue(encoder.encode(sse(event)));
       };
+      const timeout = setTimeout(() => generation.abort(new Error("The model took too long. Try a lower reasoning effort or a shorter prompt.")), 290_000);
+      const heartbeat = setInterval(() => {
+        if (!closed) controller.enqueue(encoder.encode(": working\n\n"));
+      }, 15_000);
 
       try {
-        for await (const delta of callModel({
+        for await (const event of callModel({
           provider,
           model,
           effort,
           system,
           user: input,
           images: parsedImages.images,
-          signal: req.signal,
+          webSearch,
+          signal,
         })) {
-          send({ type: "delta", text: delta });
+          send(event);
         }
-        send({ type: "done" });
+        if (!signal.aborted) send({ type: "done" });
       } catch (err: any) {
-        if (err?.name === "AbortError") {
+        if (signal.aborted) {
+          if (!req.signal.aborted && !closed) send({ type: "error", message: signal.reason?.message ?? "The run was interrupted." });
+        } else if (err?.name === "AbortError") {
           // Client navigated away or hit stop. Nothing to report.
         } else if (err instanceof ProviderError) {
           send({ type: "error", message: err.message, provider: err.provider, status: err.status });
@@ -135,8 +161,14 @@ export async function POST(req: NextRequest) {
           });
         }
       } finally {
-        controller.close();
+        clearTimeout(timeout);
+        clearInterval(heartbeat);
+        if (!closed) { closed = true; controller.close(); }
       }
+    },
+    cancel() {
+      closed = true;
+      generation.abort();
     },
   });
 
