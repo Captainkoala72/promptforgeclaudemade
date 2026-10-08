@@ -155,7 +155,7 @@ export const PROVIDERS: ProviderConfig[] = [
     baseUrlEnvVar: "MOONSHOT_BASE_URL",
     baseUrl: "https://api.moonshot.ai/v1",
     path: "/chat/completions",
-    searchNote: "Uses Kimi's built-in web search when useful.",
+    searchNote: "Uses Kimi's web search API when useful.",
     buildBody: (_args, body) => ({ ...body, max_tokens: 32768 }),
     models: [
       {

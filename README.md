@@ -38,7 +38,7 @@ Optional API root overrides: ZAI_BASE_URL, DEEPSEEK_BASE_URL, META_BASE_URL, MOO
 | GLM 5.3 Flash | Chat Completions; thinking enabled; low/high/max | Function calling backed by Z.ai POST /web_search |
 | DeepSeek Flash | Chat Completions; thinking enabled; low/high/max | Function calling backed by Z.ai POST /web_search; requires both keys |
 | Muse Spark 1.3 | Meta Responses; reasoning.effort low/medium/high/xhigh | Meta's hosted web_search tool |
-| Kimi K3 | Chat Completions; reasoning_effort low/high/max | Kimi's builtin_function named $web_search; returned arguments are echoed unchanged |
+| Kimi K3 | Chat Completions; reasoning_effort low/high/max | Function calling backed by Kimi POST /tools/search_pro, using MOONSHOT_API_KEY |
 | Claude Haiku 5.5 | Anthropic Messages; thinking.type adaptive; output_config.effort medium/high/xhigh/max | Anthropic's hosted web_search_20260318 tool with direct calling |
 
 Claude uses ANTHROPIC_API_KEY in the x-api-key header and the anthropic-version header. It uses Anthropic image source blocks, never OpenAI image_url blocks. Temperature and manual thinking budgets are omitted. Search tools are included only when the toggle is on. No local shell, filesystem, or arbitrary code tools are exposed.
@@ -51,7 +51,7 @@ Official references:
 - [GLM 5.3 Flash](https://docs.z.ai/guides/vlm/glm-5.3-flash) and [Z.ai Web Search](https://docs.z.ai/api-reference/tools/web-search)
 - [DeepSeek Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/) (only function tools are supported)
 - [Meta search grounding](https://dev.meta.ai/docs/search-grounding) and [Responses API](https://dev.meta.ai/docs/protocols/responses)
-- [Kimi web search](https://platform.moonshot.ai/docs/guide/use-web-search)
+- [Kimi web search](https://platform.kimi.ai/docs/guide/best-practices-for-web-search)
 - [Claude Haiku 5.5](https://platform.claude.com/docs/en/models/haiku-5-5/overview), [effort](https://platform.claude.com/docs/en/build-with-claude/effort), and [web search](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool)
 
 ## Validation
