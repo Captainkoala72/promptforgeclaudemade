@@ -91,7 +91,7 @@ for (const provider of PROVIDERS) {
         assert.equal(body.messages[1].content[0].text, args.user);
         assert.equal(body.messages[1].content[1].image_url.url, image.dataUrl);
         assert.equal(body.reasoning_effort, args.effort);
-        assert.equal(body.tools?.[0]?.type, webSearch ? provider.id === "moonshot" ? "builtin_function" : "function" : undefined);
+        assert.equal(body.tools?.[0]?.type, webSearch ? "function" : undefined);
         return chat();
       };
       const events = await collect(args);
@@ -119,10 +119,18 @@ for (const id of ["zai", "deepseek", "moonshot"]) {
     const args = argsFor(id, true);
     let turns = 0;
     let searches = 0;
-    const toolName = id === "moonshot" ? "$web_search" : "web_search";
-    const toolArgs = id === "moonshot" ? '{ "results": [{ "title": "Reference", "url": "https://example.com/reference" }] }' : '{"query":"current reference"}';
+    const toolName = "web_search";
+    const toolArgs = '{"query":"current reference"}';
     globalThis.fetch = async (url, init) => {
       const body = JSON.parse(init!.body as string);
+      if (String(url).endsWith("/tools/search_pro")) {
+        searches++;
+        assert.equal(id, "moonshot");
+        assert.equal(String(url), "https://api.moonshot.ai/v1/tools/search_pro");
+        assert.equal((init!.headers as Record<string, string>).Authorization, "Bearer test-key");
+        assert.deepEqual(body, { text_query: "current reference", limit: 5, timeout_seconds: 30 });
+        return Response.json({ search_results: [{ title: "Reference", url: "https://example.com/reference", snippet: "Summary", chunks: [{ text: "Facts", score: 1 }] }] });
+      }
       if (String(url).endsWith("/web_search")) {
         searches++;
         assert.equal(body.search_query, "current reference");
@@ -137,17 +145,24 @@ for (const id of ["zai", "deepseek", "moonshot"]) {
       assert.equal(body.messages[2].reasoning_content, "keep this reasoning");
       assert.equal(body.messages[2].tool_calls[0].function.arguments, toolArgs);
       assert.equal(body.messages[3].tool_call_id, "call-1");
-      if (id === "moonshot") assert.equal(body.messages[3].content, toolArgs);
-      else assert.equal(JSON.parse(body.messages[3].content).results[0].content, "Facts");
+      assert.equal(JSON.parse(body.messages[3].content).results[0].content, id === "moonshot" ? "Summary\n\nFacts" : "Facts");
       assert.equal(body.tools[0].function.name, toolName);
       return chat("Researched final prompt.");
     };
     const events = await collect(args);
     assert.equal(turns, 2);
-    assert.equal(searches, id === "moonshot" ? 0 : 1);
+    assert.equal(searches, 1);
     assert.deepEqual(events, [{ type: "source", source: { title: "Reference", url: "https://example.com/reference" } }, { type: "delta", text: "Researched final prompt." }]);
   });
 }
+
+test("Kimi rejects malformed search responses instead of generating an ungrounded prompt", async () => {
+  const args = argsFor("moonshot", true);
+  globalThis.fetch = async (url) => String(url).endsWith("/tools/search_pro")
+    ? Response.json({ results: [] })
+    : sse([{ choices: [{ delta: { tool_calls: [{ index: 0, id: "call-1", type: "function", function: { name: "web_search", arguments: '{"query":"facts"}' } }] }, finish_reason: "tool_calls" }] }, "[DONE]"]);
+  await assert.rejects(collect(args), /Kimi search returned no valid result list/);
+});
 
 test("Claude replays signed thinking and encrypted search blocks after pause_turn", async () => {
   const args = argsFor("anthropic", true);

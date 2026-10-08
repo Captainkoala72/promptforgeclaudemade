@@ -132,12 +132,25 @@ const SEARCH_FUNCTION = {
 };
 const MAX_TOOL_ROUNDS = 6;
 
-async function searchWeb(argumentsText: string, signal?: AbortSignal): Promise<any> {
-  const provider = getProvider("zai")!;
+async function searchWeb(argumentsText: string, caller: ProviderConfig, signal?: AbortSignal): Promise<any> {
+  const provider = getProvider(caller.id === "moonshot" ? "moonshot" : "zai")!;
   let query: unknown;
   try { query = JSON.parse(argumentsText).query; } catch { /* Validated below. */ }
   if (typeof query !== "string" || !query.trim() || query.length > 500) {
     throw new ProviderError("The model supplied an invalid web search query. Please retry.", 502, provider.label);
+  }
+  if (provider.id === "moonshot") {
+    const response = await request(resolveBaseUrl(provider) + "/tools/search_pro", {
+      text_query: query.trim(), limit: 5, timeout_seconds: 30,
+    }, process.env[provider.envVar]!.trim(), provider, signal);
+    const result = await response.json();
+    if (result.error) throw new ProviderError(readErrorMessage(JSON.stringify(result), 502, "Kimi search"), 502, "Kimi search");
+    if (!Array.isArray(result.search_results)) throw new ProviderError("Kimi search returned no valid result list.", 502, "Kimi search");
+    return { results: result.search_results.slice(0, 5).map((item: any) => ({
+      title: item.title, url: item.url, publish_date: item.date,
+      content: [item.snippet, ...(Array.isArray(item.chunks) ? item.chunks.map((chunk: any) => chunk.text) : [])]
+        .filter((text) => typeof text === "string").join("\n\n").slice(0, 6000),
+    })) };
   }
   const base = (process.env.ZAI_SEARCH_BASE_URL?.trim() || provider.baseUrl).replace(/\/+$/, "");
   const response = await request(base + "/web_search", {
@@ -156,9 +169,7 @@ async function searchWeb(argumentsText: string, signal?: AbortSignal): Promise<a
 async function* chatStream(args: CallModelArgs, provider: ProviderConfig, body: Record<string, any>, key: string): AsyncGenerator<ModelEvent> {
   const seen = new Set<string>();
   if (args.webSearch) {
-    body.tools = provider.id === "moonshot"
-      ? [{ type: "builtin_function", function: { name: "$web_search" } }]
-      : [SEARCH_FUNCTION];
+    body.tools = [SEARCH_FUNCTION];
     body.tool_choice = "auto";
   }
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -206,18 +217,14 @@ async function* chatStream(args: CallModelArgs, provider: ProviderConfig, body: 
     for (const call of toolCalls) {
       if (!call.id) throw new ProviderError("The provider returned a tool call without an ID.", 502, provider.label);
       let result: any;
-      if (provider.id === "moonshot" && call.function.name === "$web_search") {
-        // Kimi executes the search. Its result arguments must be echoed unchanged.
-        try { result = JSON.parse(call.function.arguments); }
-        catch { throw new ProviderError("Kimi returned invalid search arguments.", 502, provider.label); }
-      } else if (["zai", "deepseek"].includes(provider.id) && call.function.name === "web_search") {
-        result = await searchWeb(call.function.arguments, args.signal);
+      if (call.function.name === "web_search") {
+        result = await searchWeb(call.function.arguments, provider, args.signal);
       } else {
         throw new ProviderError("Unsupported tool: " + call.function.name + ".", 502, provider.label);
       }
       for (const source of sourcesIn(result, seen)) yield source;
       body.messages.push({ role: "tool", tool_call_id: call.id, name: call.function.name,
-        content: provider.id === "moonshot" ? call.function.arguments : JSON.stringify(result) });
+        content: JSON.stringify(result) });
     }
   }
 }
