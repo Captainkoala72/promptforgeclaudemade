@@ -81,8 +81,11 @@ export default function Forge() {
   const controlsRef = useRef<HTMLDivElement>(null);
   const historyButtonRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const addingImagesRef = useRef(false);
   const restoreTokenRef = useRef(0);
+  // Ignore async attachment work that belongs to a previous prompt session.
+  const sessionTokenRef = useRef(0);
 
   const provider = getProvider(providerId);
   const model = getModel(providerId, modelId);
@@ -102,6 +105,7 @@ export default function Forge() {
 
   async function addImages(files: File[]) {
     if (!files.length || addingImagesRef.current || restoringImages) return;
+    const session = sessionTokenRef.current;
     addingImagesRef.current = true;
     setAddingImages(true);
     setImageError("");
@@ -110,6 +114,7 @@ export default function Forge() {
       for (const file of files) {
         if (next.length >= MAX_IMAGES) throw new Error(`Attach no more than ${MAX_IMAGES} images.`);
         const image = await prepareImage(file);
+        if (sessionTokenRef.current !== session) return;
         if (next.reduce((sum, item) => sum + item.bytes, 0) + image.bytes > MAX_TOTAL_IMAGE_BYTES) {
           throw new Error("Images must total 2.5 MB or less. Remove one or choose smaller images.");
         }
@@ -120,11 +125,14 @@ export default function Forge() {
         setImageError(`Reattach ${requiredImageCount - next.length} more image${requiredImageCount - next.length === 1 ? "" : "s"} to rerun this history entry.`);
       }
     } catch (err) {
+      if (sessionTokenRef.current !== session) return;
       setImageError(err instanceof Error ? err.message : "Could not attach the image.");
     } finally {
-      addingImagesRef.current = false;
-      setAddingImages(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (sessionTokenRef.current === session) {
+        addingImagesRef.current = false;
+        setAddingImages(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
     }
   }
 
@@ -176,9 +184,9 @@ export default function Forge() {
   }
 
   const commitRun = useCallback(
-    (run: Run) => {
+    (run: Run, activate = true) => {
       setHistory((prev) => saveHistory([run, ...prev.filter((r) => r.id !== run.id)]));
-      setActiveRunId(run.id);
+      if (activate) setActiveRunId(run.id);
     },
     []
   );
@@ -188,6 +196,7 @@ export default function Forge() {
     if (!text || streaming || abortRef.current || addingImages || restoringImages || images.length < requiredImageCount) return;
 
     const controller = new AbortController();
+    const session = sessionTokenRef.current;
     abortRef.current = controller;
 
     setStreaming(true);
@@ -222,9 +231,12 @@ export default function Forge() {
         signal: controller.signal,
       });
 
+      if (controller.signal.aborted) return;
+
       // Validation failures come back as plain JSON, not a stream.
       if (!res.ok && res.headers.get("content-type")?.includes("application/json")) {
         const body = await res.json().catch(() => ({}));
+        if (controller.signal.aborted) return;
         setError({ message: body?.message ?? `Request failed with ${res.status}.` });
         return;
       }
@@ -240,6 +252,7 @@ export default function Forge() {
 
       while (true) {
         const { done, value } = await reader.read();
+        if (controller.signal.aborted) return;
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
@@ -311,10 +324,10 @@ export default function Forge() {
         try {
           await saveRunImages(run.id, images);
         } catch {
-          setImageError("The result was saved, but this browser could not keep its images for history.");
+          if (sessionTokenRef.current === session) setImageError("The result was saved, but this browser could not keep its images for history.");
         }
       }
-      commitRun(run);
+      commitRun(run, sessionTokenRef.current === session);
     }
   }, [input, instructions, webSearch, images, streaming, addingImages, restoringImages, requiredImageCount, mode, optimizerStyle, templateId, providerId, modelId, effort, commitRun]);
 
@@ -324,6 +337,27 @@ export default function Forge() {
     setStreaming(false);
   }
 
+  function startNewPrompt() {
+    ++sessionTokenRef.current;
+    ++restoreTokenRef.current;
+    stop();
+    setInput("");
+    setInstructions("");
+    setOutput("");
+    setSources([]);
+    setImages([]);
+    setImageError("");
+    setError(null);
+    setRequiredImageCount(0);
+    setRestoringImages(false);
+    addingImagesRef.current = false;
+    setAddingImages(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    setActiveRunId(null);
+    setSidebarOpen(false);
+    inputRef.current?.focus({ preventScroll: true });
+  }
+
   function handleRerun() {
     // Same input, whatever provider/model/effort is currently selected.
     controlsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -331,6 +365,9 @@ export default function Forge() {
   }
 
   function restore(run: Run) {
+    ++sessionTokenRef.current;
+    addingImagesRef.current = false;
+    setAddingImages(false);
     const token = ++restoreTokenRef.current;
     stop();
     setImages([]);
@@ -415,26 +452,24 @@ export default function Forge() {
         </div>
       </header>
       <main id="top" className="flex-1">
-        <section aria-labelledby="hero-title" className="mx-auto grid w-full max-w-[1200px] items-center gap-3 px-5 pb-8 pt-9 sm:px-8 md:grid-cols-[minmax(0,1fr)_minmax(280px,0.82fr)] md:gap-10 md:pb-12 md:pt-11">
-          <div className="max-w-[650px]">
-            <p className="mb-4 font-mono text-xs font-semibold uppercase tracking-[0.16em] text-beam">Prompt workbench</p>
-            <h1 id="hero-title" className="max-w-[13ch] text-[40px] font-semibold leading-[1.04] tracking-[-0.045em] text-haze-100 sm:text-[52px] md:text-[clamp(3.5rem,5vw,4.25rem)]">Forge a <span className="text-beam">clearer</span> prompt.</h1>
-            <p className="mt-5 max-w-[60ch] text-base leading-[1.65] text-haze-500 sm:text-[17px]">Turn a rough idea into a structured prompt, or polish one you already wrote. Choose a template and model, then work from the result.</p>
-            <a href="#workbench" className="mt-6 inline-flex min-h-11 items-center justify-center rounded-[11px] bg-beam px-5 py-2.5 text-sm font-semibold text-ink-900 transition-colors duration-200 hover:bg-ember">Open the workbench <span aria-hidden="true" className="ml-2">&rarr;</span></a>
-          </div>
-          <div className="relative mx-auto flex w-full max-w-[320px] items-center justify-center md:max-w-[360px]" aria-hidden="true">
-            <div className="pointer-events-none absolute inset-[19%] rounded-full bg-glow/25 blur-[70px]" />
-            <Image src="/forge-logo.webp" alt="" width={360} height={360} className="relative h-auto w-[240px] rounded-[18%] sm:w-[290px] md:w-[340px]" priority unoptimized />
-          </div>
-        </section>
-        <section id="workbench" aria-labelledby="workbench-title" className="scroll-mt-[68px] border-t border-ink-600 bg-ink-850">
-          <div className="mx-auto w-full max-w-[1200px] px-5 py-10 sm:px-8 md:py-14">
+        <section id="workbench" aria-labelledby="workbench-title" className="scroll-mt-[68px] bg-ink-850">
+          <div className="mx-auto w-full max-w-[1200px] px-5 py-10 sm:px-8">
             <div className="mb-7 flex flex-wrap items-end justify-between gap-3 border-b border-ink-600 pb-6">
               <div>
                 <p className="mb-2 font-mono text-xs font-medium uppercase tracking-[0.14em] text-beam">Your workspace</p>
-                <h2 id="workbench-title" className="text-[30px] font-semibold leading-tight tracking-[-0.025em] text-haze-100 sm:text-[36px]">The workbench</h2>
+                <h1 id="workbench-title" className="text-[30px] font-semibold leading-tight tracking-[-0.025em] text-haze-100 sm:text-[36px]">The workbench</h1>
               </div>
               <p className="max-w-[44ch] text-sm leading-relaxed text-haze-500">Build from a sketch or refine what you have.</p>
+            </div>
+            <div className="mb-6 grid lg:grid-cols-2 lg:gap-7">
+              <button
+                type="button"
+                onClick={startNewPrompt}
+                className="flex min-h-[54px] w-full items-center justify-center gap-2.5 rounded-2xl border border-ember/60 bg-gradient-to-r from-beam to-[#ff5714] px-5 py-3.5 text-sm font-bold uppercase tracking-[0.04em] text-ink-900 shadow-[0_4px_20px_rgba(255,106,26,0.18),inset_0_1px_0_rgba(255,255,255,0.18)] transition-[filter,box-shadow] duration-200 hover:brightness-110 hover:shadow-[0_6px_24px_rgba(255,106,26,0.28)] active:brightness-95 sm:text-base"
+              >
+                <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M10 4v12M4 10h12" /></svg>
+                Forge a new prompt
+              </button>
             </div>
             <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start lg:gap-7">
               <div onPaste={handleImagePaste} className="flex min-w-0 flex-col gap-6 rounded-2xl border border-ink-600 bg-ink-800 p-5 sm:p-6">
@@ -445,6 +480,7 @@ export default function Forge() {
                 <div>
                   <label htmlFor="input" className="mb-2 block text-sm font-medium text-haze-100">Prompt or idea</label>
                   <textarea
+                    ref={inputRef}
                     id="input"
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
